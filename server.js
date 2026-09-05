@@ -27,6 +27,7 @@ const vertexAI = new VertexAI({
 
 const geminiModel = vertexAI.getGenerativeModel({
   model: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+  generationConfig: { responseMimeType: 'application/json', temperature: 0.6 },
 });
 
 const rooms = new Map();
@@ -247,53 +248,64 @@ app.post('/api/suggest-questions', async (req, res) => {
       .map((s) => `"${s.text}" (sentiment: ${s.score > 0 ? 'positive' : s.score < 0 ? 'negative' : 'neutral'}, intensity: ${s.magnitude.toFixed(2)})`)
       .join('\n');
 
-    const prompt = `You are an expert family mediator specializing in parent-child conflict resolution.
-You are assisting an interviewer who is conducting a mediation session via video call.
+    const partyLabel = intervieweeRole === 'parent' ? 'the father (chairman)' : 'the son (vice-chairman)';
 
-FIRST, analyze the conversation and determine the current stage. Stages are:
-- **Opening**: Greetings, introductions, building rapport, explaining the process
-- **Story-telling**: Each party shares their perspective, initial accounts of the conflict
-- **Exploration**: Deeper probing into feelings, needs, and underlying interests
-- **Negotiation**: Working toward understanding, finding common ground, proposing solutions
-- **Resolution**: Agreements forming, commitments being made, wrapping up
+    const prompt = `You are the neutral agent of a statutory auditor who is consulted separately by a father (chairman) and his son (vice-chairman) running a family medical corporation. You assist the interviewer during a one-on-one video interview with ONE party: ${partyLabel}.
 
-Output the detected stage on the first line as: STAGE: <stage name>
+Your job is to help the interviewer collect this party's account without taking sides:
+1. FACTS - what happened, as observable events (who did what, when, where, what was said)
+2. INTERPRETATION - how this party reads those events (why they think it happened, what it meant)
+3. BACKGROUND - history that makes them see it that way (relationships, past events, loyalties)
+4. INTEREST - what they want to protect or obtain (not their position, but the need behind it)
 
-THEN suggest 3-5 thoughtful, empathetic questions based on the interviewee's verbal responses and emotional state.
+Rules:
+- Never persuade, never advise, never evaluate. Do not propose solutions.
+- Never mention what the other party said.
+- When a statement mixes fact and interpretation (e.g. "he shouted at him because he hates me"), suggest a question that separates them ("What exactly was said, and by whom?" then "What made you feel it was directed at you?").
+- When words and expression disagree (e.g. says "it's fine" while sorrow is high), gently explore that.
+- Questions must be open-ended, one idea each, in polite spoken Japanese if the transcript is Japanese, otherwise English.
 
-Guidelines:
-- Questions should be open-ended and non-judgmental
-- Consider both the spoken words AND the detected emotions
-- If there is a mismatch between words and expressions (e.g., saying "I'm fine" while showing sorrow), gently explore that
-- Adapt your language to be appropriate for the interviewee (${intervieweeRole === 'parent' ? 'parent/adult' : 'child/young person'})
-- Focus on understanding feelings, needs, and perspectives
-- Avoid leading questions or taking sides
-- Respond in the same language as the transcript (Japanese or English)
-
-**Recent Transcript**:
+Recent transcript:
 ${transcript || '(No speech yet)'}
 
-**Recent Facial Expressions** (from Google Cloud Vision):
+Recent facial expressions (Google Cloud Vision):
 ${expressionSummary || '(No expression data)'}
 
-**Text Sentiment Analysis**:
+Sentence sentiment (Google Natural Language):
 ${sentimentSummary || '(No sentiment data)'}
 
-For each question, briefly explain why you are suggesting it (what emotional or verbal cue prompted it).`;
+Return ONLY JSON in this shape:
+{
+  "stage": "Opening | Story-telling | Exploration | Negotiation | Resolution",
+  "facts_so_far": ["observable event 1", "..."],
+  "interpretations_so_far": ["this party's reading 1", "..."],
+  "mixed_statements": [{"quote": "...", "fact_part": "...", "interpretation_part": "..."}],
+  "questions": [
+    {"text": "...", "target": "facts | interpretation | background | interest", "why": "one short reason (cue from words/expression)"}
+  ]
+}
+Give 3 to 5 questions. At least one must target "facts" and at least one "interest".`;
 
     const result = await geminiModel.generateContent(prompt);
     const response = result.response;
     const text = response.candidates[0].content.parts[0].text;
 
-    let stage = 'Opening';
-    const stageMatch = text.match(/^STAGE:\s*(.+)$/m);
-    if (stageMatch) {
-      stage = stageMatch[1].trim();
+    let parsed;
+    try {
+      parsed = JSON.parse(text.replace(/^```(?:json)?\s*|```\s*$/g, '').trim());
+    } catch (e) {
+      // Fallback: keep the old text shape so the UI still shows something
+      parsed = { stage: 'Exploration', facts_so_far: [], interpretations_so_far: [], mixed_statements: [], questions: [], suggestions: text };
     }
 
-    const suggestions = text.replace(/^STAGE:.*$/m, '').trim();
-
-    res.json({ suggestions, stage });
+    res.json({
+      stage: parsed.stage || 'Exploration',
+      facts_so_far: parsed.facts_so_far || [],
+      interpretations_so_far: parsed.interpretations_so_far || [],
+      mixed_statements: parsed.mixed_statements || [],
+      questions: parsed.questions || [],
+      suggestions: parsed.suggestions || null,
+    });
   } catch (err) {
     console.error('Gemini API error:', err.message);
     res.status(500).json({ error: err.message });
