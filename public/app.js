@@ -388,6 +388,84 @@ function updateExpressionUI(expr) {
   expressionBadge.classList.remove('hidden');
 }
 
+
+const TARGET_LABELS = {
+  facts: '事実',
+  interpretation: '解釈',
+  background: '背景',
+  interest: '利害',
+};
+
+function renderSuggestions(data) {
+  suggestionsEl.innerHTML = '';
+
+  if (Array.isArray(data.mixed_statements) && data.mixed_statements.length > 0) {
+    const card = document.createElement('div');
+    card.className = 'mixed-card';
+    const h = document.createElement('div');
+    h.className = 'mixed-title';
+    h.textContent = '事実と解釈が混ざっている発言';
+    card.appendChild(h);
+    data.mixed_statements.slice(0, 3).forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'mixed-row';
+      row.innerHTML =
+        `<div class="mixed-quote">「${escapeHtml(m.quote || '')}」</div>` +
+        `<div class="mixed-split"><span class="tag tag-facts">事実</span>${escapeHtml(m.fact_part || '')}</div>` +
+        `<div class="mixed-split"><span class="tag tag-interpretation">解釈</span>${escapeHtml(m.interpretation_part || '')}</div>`;
+      card.appendChild(row);
+    });
+    suggestionsEl.appendChild(card);
+  }
+
+  if (Array.isArray(data.questions) && data.questions.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'question-list';
+    data.questions.forEach((q) => {
+      const btn = document.createElement('button');
+      btn.className = 'question-btn';
+      const target = TARGET_LABELS[q.target] ? q.target : 'facts';
+      btn.innerHTML =
+        `<span class="tag tag-${target}">${TARGET_LABELS[target]}</span>` +
+        `<span class="question-text">${escapeHtml(q.text || '')}</span>` +
+        (q.why ? `<span class="question-why">${escapeHtml(q.why)}</span>` : '');
+      btn.addEventListener('click', () => askQuestion(q.text || '', target));
+      list.appendChild(btn);
+    });
+    suggestionsEl.appendChild(list);
+    return;
+  }
+
+  const p = document.createElement('p');
+  p.className = 'placeholder';
+  p.textContent = data.suggestions || 'No suggestions available.';
+  suggestionsEl.appendChild(p);
+}
+
+function askQuestion(text, target) {
+  // The interviewer chose this question: put it in the script as the interviewer's line.
+  const placeholder = transcriptEl.querySelector('.placeholder');
+  if (placeholder) placeholder.remove();
+
+  const div = document.createElement('div');
+  div.className = 'transcript-entry interviewer';
+  const p = document.createElement('p');
+  p.textContent = text;
+  div.appendChild(p);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = `${new Date().toLocaleTimeString()} | Interviewer | ${TARGET_LABELS[target] || ''}`;
+  div.appendChild(meta);
+  transcriptEl.appendChild(div);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+
+  transcriptEntries.push({ text: `[Interviewer] ${text}`, confidence: null, lang: null, timestamp: new Date(), sentiment: null, interviewer: true });
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
 async function getSuggestions() {
   const recentText = transcriptEntries
     .slice(-10)
@@ -419,7 +497,7 @@ async function getSuggestions() {
     if (data.stage) {
       stageDisplay.textContent = `Stage: ${data.stage}`;
     }
-    suggestionsEl.textContent = data.suggestions || 'No suggestions available.';
+    renderSuggestions(data);
     suggestionsEl.classList.remove('hidden');
     suggestionLoading.classList.add('hidden');
   } catch (err) {
