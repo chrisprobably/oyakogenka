@@ -35,7 +35,10 @@ const CHANNEL_INTERVIEWER = 0;
 const CHANNEL_INTERVIEWEE = 1;
 
 const EXPRESSION_INTERVAL_MS = 5000;
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:34.61.142.251:3478', username: 'oyako', credential: 'mediation2026' },
+];
 
 const LIKELIHOOD_VALUES = {
   UNKNOWN: 0,
@@ -52,13 +55,13 @@ function likelihoodToPercent(lk) {
 
 function dominantExpression(expr) {
   const scores = {
-    Joy: LIKELIHOOD_VALUES[expr.joy] || 0,
-    Sorrow: LIKELIHOOD_VALUES[expr.sorrow] || 0,
-    Anger: LIKELIHOOD_VALUES[expr.anger] || 0,
-    Surprise: LIKELIHOOD_VALUES[expr.surprise] || 0,
+    '喜び Joy': LIKELIHOOD_VALUES[expr.joy] || 0,
+    '悲しみ Sorrow': LIKELIHOOD_VALUES[expr.sorrow] || 0,
+    '怒り Anger': LIKELIHOOD_VALUES[expr.anger] || 0,
+    '驚き Surprise': LIKELIHOOD_VALUES[expr.surprise] || 0,
   };
   const max = Math.max(...Object.values(scores));
-  if (max < 0.3) return 'Neutral';
+  if (max < 0.3) return '平常 Neutral';
   return Object.keys(scores).find((k) => scores[k] === max);
 }
 
@@ -92,7 +95,7 @@ function connectWebSocket() {
     ws = new WebSocket(`${protocol}//${location.host}`);
 
     ws.onopen = () => {
-      setStatus(true, 'Connected to server');
+      setStatus(true, 'サーバー接続済み Connected');
       resolve();
     };
 
@@ -102,11 +105,11 @@ function connectWebSocket() {
     };
 
     ws.onclose = () => {
-      setStatus(false, 'Disconnected');
+      setStatus(false, '切断 Disconnected');
     };
 
     ws.onerror = () => {
-      setStatus(false, 'Connection error');
+      setStatus(false, '接続エラー Connection error');
       reject(new Error('WebSocket connection failed'));
     };
   });
@@ -120,11 +123,11 @@ function handleServerMessage(data) {
       shareLink.value = joinUrl;
       roomInfo.classList.remove('hidden');
       preStartHint.classList.add('hidden');
-      setStatus(true, `Room ${roomId} — waiting for interviewee`);
+      setStatus(true, `ルーム ${roomId} — 対象者の参加待ち Waiting for interviewee`);
       break;
 
     case 'peer-joined':
-      setStatus(true, 'Interviewee connected — starting call');
+      setStatus(true, '対象者接続 — 通話開始 Interviewee connected');
       startWebRTC(true);
       break;
 
@@ -133,7 +136,7 @@ function handleServerMessage(data) {
       break;
 
     case 'peer-left':
-      setStatus(false, 'Interviewee disconnected');
+      setStatus(false, '対象者切断 Interviewee disconnected');
       if (remoteRecorder && remoteRecorder.state !== 'inactive') {
         remoteRecorder.stop();
         remoteRecorder = null;
@@ -144,7 +147,7 @@ function handleServerMessage(data) {
       }
       remoteVideo.srcObject = null;
       waitingOverlay.classList.remove('hidden');
-      speechStatus.textContent = 'Inactive';
+      speechStatus.textContent = '停止中 Inactive';
       speechStatus.classList.remove('active');
       break;
 
@@ -159,39 +162,72 @@ function handleServerMessage(data) {
 }
 
 async function startWebRTC(isInitiator) {
+  console.log('[INTERVIEWER] startWebRTC, initiator:', isInitiator);
   peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
+  const senders = [];
   localStream.getTracks().forEach((track) => {
-    peerConnection.addTrack(track, localStream);
+    console.log('[INTERVIEWER] Adding local track:', track.kind, track.readyState);
+    senders.push(peerConnection.addTrack(track, localStream));
   });
 
   peerConnection.onicecandidate = (event) => {
-    if (event.candidate && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'signal',
-        data: { candidate: event.candidate },
-      }));
+    if (event.candidate) {
+      console.log('[INTERVIEWER] ICE candidate:', event.candidate.type, event.candidate.protocol);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'signal',
+          data: { candidate: event.candidate },
+        }));
+      }
+    } else {
+      console.log('[INTERVIEWER] ICE gathering complete');
     }
   };
 
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log('[INTERVIEWER] ICE connection state:', peerConnection.iceConnectionState);
+  };
+
+  peerConnection.onicegatheringstatechange = () => {
+    console.log('[INTERVIEWER] ICE gathering state:', peerConnection.iceGatheringState);
+  };
+
+  let analysisStarted = false;
   peerConnection.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
+    console.log('[INTERVIEWER] ontrack fired:', event.track.kind, 'streams:', event.streams?.length);
+    const stream = event.streams?.[0] || (() => {
+      if (!remoteVideo.srcObject) remoteVideo.srcObject = new MediaStream();
+      return remoteVideo.srcObject;
+    })();
+    if (event.streams?.[0]) {
+      remoteVideo.srcObject = stream;
+    } else {
+      stream.addTrack(event.track);
+    }
+    remoteVideo.play().catch((e) => console.warn('[INTERVIEWER] play() failed:', e.message));
     waitingOverlay.classList.add('hidden');
-    startAnalysis(event.streams[0]);
+    console.log('[INTERVIEWER] Remote stream tracks:', stream.getTracks().map(t => `${t.kind}:${t.readyState}`).join(', '));
+    if (!analysisStarted) {
+      analysisStarted = true;
+      startAnalysis(stream);
+    }
   };
 
   peerConnection.onconnectionstatechange = () => {
     const state = peerConnection?.connectionState;
+    console.log('[INTERVIEWER] Connection state:', state);
     if (state === 'connected') {
-      setStatus(true, 'Call active');
+      setStatus(true, '通話中 Call active');
     } else if (state === 'disconnected' || state === 'failed') {
-      setStatus(false, `Call ${state}`);
+      setStatus(false, `通話${state} Call ${state}`);
     }
   };
 
   if (isInitiator) {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
+    console.log('[INTERVIEWER] Offer created and sent');
     ws.send(JSON.stringify({
       type: 'signal',
       data: { sdp: peerConnection.localDescription },
@@ -200,6 +236,7 @@ async function startWebRTC(isInitiator) {
 }
 
 async function handleSignal(signal) {
+  console.log('[INTERVIEWER] handleSignal:', signal.sdp ? `SDP ${signal.sdp.type}` : signal.candidate ? 'ICE candidate' : 'unknown');
   if (!peerConnection) {
     await startWebRTC(false);
   }
@@ -343,8 +380,8 @@ async function analyzeSentiment(text) {
         div.classList.add(score > 0.1 ? 'positive' : score < -0.1 ? 'negative' : 'neutral');
 
         const meta = div.querySelector('.meta');
-        const label = score > 0.1 ? 'Positive' : score < -0.1 ? 'Negative' : 'Neutral';
-        meta.textContent += ` | Sentiment: ${label} (${score.toFixed(2)})`;
+        const label = score > 0.1 ? 'ポジティブ Positive' : score < -0.1 ? 'ネガティブ Negative' : '中立 Neutral';
+        meta.textContent += ` | 感情 Sentiment: ${label} (${score.toFixed(2)})`;
       }
 
       if (data.sentences) {
@@ -416,7 +453,7 @@ async function getSuggestions() {
     .join('\n');
 
   if (!recentText.trim() && recentExpressions.length === 0) {
-    suggestionsEl.innerHTML = '<p class="placeholder">Not enough data yet. Continue the conversation and try again.</p>';
+    suggestionsEl.innerHTML = '<p class="placeholder">データ不足です。会話を続けてから再試行してください Not enough data yet. Continue the conversation and try again.</p>';
     return;
   }
 
@@ -438,14 +475,14 @@ async function getSuggestions() {
 
     const data = await res.json();
     if (data.stage) {
-      stageDisplay.textContent = `Stage: ${data.stage}`;
+      stageDisplay.textContent = `段階 Stage: ${data.stage}`;
     }
-    suggestionsEl.textContent = data.suggestions || 'No suggestions available.';
+    suggestionsEl.textContent = data.suggestions || '提案はありません No suggestions available.';
     suggestionsEl.classList.remove('hidden');
     suggestionLoading.classList.add('hidden');
   } catch (err) {
     console.error('Suggestion error:', err);
-    suggestionsEl.innerHTML = `<p class="placeholder">Error getting suggestions: ${err.message}</p>`;
+    suggestionsEl.innerHTML = `<p class="placeholder">提案取得エラー Error getting suggestions: ${err.message}</p>`;
     suggestionsEl.classList.remove('hidden');
     suggestionLoading.classList.add('hidden');
   }
@@ -468,7 +505,7 @@ async function startSession() {
     // Start transcribing local (interviewer) audio immediately
     const localAudio = new MediaStream(localStream.getAudioTracks());
     localRecorder = startChannelRecorder('interviewer', CHANNEL_INTERVIEWER, localAudio);
-    speechStatus.textContent = 'Listening';
+    speechStatus.textContent = '聴取中 Listening';
     speechStatus.classList.add('active');
     btnSuggest.disabled = false;
 
@@ -513,10 +550,10 @@ function stopSession() {
   btnStart.disabled = false;
   btnStop.disabled = true;
   btnSuggest.disabled = true;
-  speechStatus.textContent = 'Inactive';
+  speechStatus.textContent = '停止中 Inactive';
   speechStatus.classList.remove('active');
   expressionBadge.classList.add('hidden');
-  stageDisplay.textContent = 'Stage: Waiting...';
+  stageDisplay.textContent = '段階 Stage: 待機中 Waiting...';
 }
 
 btnStart.addEventListener('click', startSession);
@@ -525,6 +562,6 @@ btnSuggest.addEventListener('click', getSuggestions);
 btnCopy.addEventListener('click', () => {
   shareLink.select();
   navigator.clipboard.writeText(shareLink.value);
-  btnCopy.textContent = 'Copied!';
-  setTimeout(() => { btnCopy.textContent = 'Copy'; }, 2000);
+  btnCopy.textContent = 'コピー済み Copied!';
+  setTimeout(() => { btnCopy.textContent = 'コピー Copy'; }, 2000);
 });

@@ -11,23 +11,23 @@
     <h1>親子間仲裁 <span>Oyako Mediation</span></h1>
     <div class="session-controls">
       <label>
-        Interviewee:
+        対象者 Interviewee:
         <select id="role-select">
-          <option value="parent">Parent (親)</option>
-          <option value="child">Child (子)</option>
+          <option value="parent">親 Parent</option>
+          <option value="child">子 Child</option>
         </select>
       </label>
-      <div id="stage-display" class="stage-badge">Stage: Waiting...</div>
+      <div id="stage-display" class="stage-badge">段階 Stage: 待機中 Waiting...</div>
     </div>
   </header>
 
   <main>
     <div class="panel video-panel">
       <div class="panel-header">
-        <h2>Interviewee Video</h2>
+        <h2>対象者映像 Interviewee Video</h2>
         <div class="controls">
-          <button id="btn-start" class="btn btn-primary">Start Session</button>
-          <button id="btn-stop" class="btn btn-danger" disabled>End Session</button>
+          <button id="btn-start" class="btn btn-primary">開始 Start</button>
+          <button id="btn-stop" class="btn btn-danger" disabled>終了 End</button>
         </div>
       </div>
       <div class="video-container">
@@ -37,32 +37,32 @@
         <div id="waiting-overlay" class="waiting-overlay">
           <div class="waiting-content">
             <div id="room-info" class="hidden">
-              <p>Share this link with the interviewee:</p>
+              <p>このリンクを対象者に共有してください Share this link with the interviewee:</p>
               <div class="share-link-box">
                 <input id="share-link" type="text" readonly>
-                <button id="btn-copy" class="btn btn-secondary">Copy</button>
+                <button id="btn-copy" class="btn btn-secondary">コピー Copy</button>
               </div>
-              <p class="waiting-hint">Waiting for interviewee to join...</p>
+              <p class="waiting-hint">対象者の参加を待っています Waiting for interviewee to join...</p>
             </div>
-            <p id="pre-start-hint">Click "Start Session" to begin</p>
+            <p id="pre-start-hint">「開始」をクリックしてセッションを始めましょう Click "Start" to begin</p>
           </div>
         </div>
       </div>
       <div id="expression-detail" class="expression-detail">
         <div class="expression-bar">
-          <span>Joy</span>
+          <span>喜び Joy</span>
           <div class="bar"><div id="bar-joy" class="bar-fill joy"></div></div>
         </div>
         <div class="expression-bar">
-          <span>Sorrow</span>
+          <span>悲しみ Sorrow</span>
           <div class="bar"><div id="bar-sorrow" class="bar-fill sorrow"></div></div>
         </div>
         <div class="expression-bar">
-          <span>Anger</span>
+          <span>怒り Anger</span>
           <div class="bar"><div id="bar-anger" class="bar-fill anger"></div></div>
         </div>
         <div class="expression-bar">
-          <span>Surprise</span>
+          <span>驚き Surprise</span>
           <div class="bar"><div id="bar-surprise" class="bar-fill surprise"></div></div>
         </div>
       </div>
@@ -70,26 +70,26 @@
 
     <div class="panel transcript-panel">
       <div class="panel-header">
-        <h2>Transcript</h2>
-        <span id="speech-status" class="status-indicator">Inactive</span>
+        <h2>文字起こし Transcript</h2>
+        <span id="speech-status" class="status-indicator">停止中 Inactive</span>
       </div>
       <div id="transcript" class="transcript-content">
-        <p class="placeholder">Transcript will appear when the interviewee speaks...</p>
+        <p class="placeholder">対象者が話すと文字起こしが表示されます Transcript will appear when the interviewee speaks...</p>
       </div>
       <div id="interim-text" class="interim-text"></div>
     </div>
 
     <div class="panel suggestions-panel">
       <div class="panel-header">
-        <h2>AI Suggested Questions</h2>
-        <button id="btn-suggest" class="btn btn-secondary" disabled>Get Suggestions</button>
+        <h2>AI提案質問 AI Suggested Questions</h2>
+        <button id="btn-suggest" class="btn btn-secondary" disabled>提案を取得 Get Suggestions</button>
       </div>
       <div id="suggestions" class="suggestions-content">
-        <p class="placeholder">Click "Get Suggestions" after some conversation to receive AI-powered question recommendations...</p>
+        <p class="placeholder">会話が進んだら「提案を取得」をクリックしてAIによる質問の提案を受けましょう Click "Get Suggestions" after some conversation to receive AI-powered question recommendations...</p>
       </div>
       <div id="suggestion-loading" class="loading hidden">
         <div class="spinner"></div>
-        <span>Analyzing conversation...</span>
+        <span>会話を分析中... Analyzing conversation...</span>
       </div>
     </div>
   </main>
@@ -97,7 +97,7 @@
   <footer>
     <div id="status-bar">
       <span id="connection-status" class="status-dot disconnected"></span>
-      <span id="status-text">Not started</span>
+      <span id="status-text">未開始 Not started</span>
     </div>
   </footer>
 

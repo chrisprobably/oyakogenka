@@ -15,7 +15,10 @@ let peerConnection = null;
 let audioMuted = false;
 let cameraOff = false;
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:34.61.142.251:3478', username: 'oyako', credential: 'mediation2026' },
+];
 
 const roomId = window.location.pathname.split('/join/')[1];
 
@@ -32,7 +35,7 @@ function connectWebSocket() {
     ws = new WebSocket(`${protocol}//${location.host}`);
 
     ws.onopen = () => {
-      setStatus(true, 'Connected to server');
+      setStatus(true, 'サーバー接続済み Connected to server');
       resolve();
     };
 
@@ -41,9 +44,9 @@ function connectWebSocket() {
       handleServerMessage(data);
     };
 
-    ws.onclose = () => setStatus(false, 'Disconnected');
+    ws.onclose = () => setStatus(false, '切断 Disconnected');
     ws.onerror = () => {
-      setStatus(false, 'Connection error');
+      setStatus(false, '接続エラー Connection error');
       reject(new Error('WebSocket failed'));
     };
   });
@@ -52,7 +55,7 @@ function connectWebSocket() {
 function handleServerMessage(data) {
   switch (data.type) {
     case 'room-joined':
-      setStatus(true, 'Joined room — waiting for interviewer');
+      setStatus(true, 'ルーム参加済み — 面談者の接続待ち Joined room — waiting for interviewer');
       break;
 
     case 'signal':
@@ -60,7 +63,7 @@ function handleServerMessage(data) {
       break;
 
     case 'peer-left':
-      setStatus(false, 'Interviewer disconnected');
+      setStatus(false, '面談者切断 Interviewer disconnected');
       remoteVideo.srcObject = null;
       break;
 
@@ -71,37 +74,61 @@ function handleServerMessage(data) {
 }
 
 async function startWebRTC(isInitiator) {
+  console.log('[INTERVIEWEE] startWebRTC, initiator:', isInitiator);
   peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
   localStream.getTracks().forEach((track) => {
+    console.log('[INTERVIEWEE] Adding local track:', track.kind, track.readyState);
     peerConnection.addTrack(track, localStream);
   });
 
   peerConnection.onicecandidate = (event) => {
-    if (event.candidate && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'signal',
-        data: { candidate: event.candidate },
-      }));
+    if (event.candidate) {
+      console.log('[INTERVIEWEE] ICE candidate:', event.candidate.type, event.candidate.protocol);
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'signal',
+          data: { candidate: event.candidate },
+        }));
+      }
+    } else {
+      console.log('[INTERVIEWEE] ICE gathering complete');
     }
   };
 
+  peerConnection.oniceconnectionstatechange = () => {
+    console.log('[INTERVIEWEE] ICE connection state:', peerConnection.iceConnectionState);
+  };
+
   peerConnection.ontrack = (event) => {
-    remoteVideo.srcObject = event.streams[0];
+    console.log('[INTERVIEWEE] ontrack fired:', event.track.kind, 'streams:', event.streams?.length);
+    if (event.streams?.[0]) {
+      remoteVideo.srcObject = event.streams[0];
+    } else {
+      if (!remoteVideo.srcObject) {
+        remoteVideo.srcObject = new MediaStream();
+      }
+      remoteVideo.srcObject.addTrack(event.track);
+    }
+    remoteVideo.play().catch((e) => console.warn('[INTERVIEWEE] play() failed:', e.message));
+    const tracks = (remoteVideo.srcObject?.getTracks() || []).map(t => `${t.kind}:${t.readyState}`);
+    console.log('[INTERVIEWEE] Remote stream tracks:', tracks.join(', '));
   };
 
   peerConnection.onconnectionstatechange = () => {
     const state = peerConnection?.connectionState;
+    console.log('[INTERVIEWEE] Connection state:', state);
     if (state === 'connected') {
-      setStatus(true, 'In call');
+      setStatus(true, '通話中 In call');
     } else if (state === 'disconnected' || state === 'failed') {
-      setStatus(false, `Call ${state}`);
+      setStatus(false, `通話${state} Call ${state}`);
     }
   };
 
   if (isInitiator) {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
+    console.log('[INTERVIEWEE] Offer created and sent');
     ws.send(JSON.stringify({
       type: 'signal',
       data: { sdp: peerConnection.localDescription },
@@ -110,6 +137,7 @@ async function startWebRTC(isInitiator) {
 }
 
 async function handleSignal(signal) {
+  console.log('[INTERVIEWEE] handleSignal:', signal.sdp ? `SDP ${signal.sdp.type}` : signal.candidate ? 'ICE candidate' : 'unknown');
   if (!peerConnection) {
     await startWebRTC(false);
   }
@@ -142,7 +170,7 @@ async function joinCall() {
     ws.send(JSON.stringify({ type: 'join-room', roomId }));
 
     joinOverlay.classList.add('hidden');
-    setStatus(true, 'Joined — connecting to interviewer');
+    setStatus(true, '参加済み — 面談者に接続中 Joined — connecting to interviewer');
   } catch (err) {
     console.error('Failed to join:', err);
     setStatus(false, `Error: ${err.message}`);
@@ -164,7 +192,7 @@ function leaveCall() {
   remoteVideo.srcObject = null;
   localVideo.srcObject = null;
   joinOverlay.classList.remove('hidden');
-  setStatus(false, 'Left call');
+  setStatus(false, '退出済み Left call');
 }
 
 btnJoin.addEventListener('click', joinCall);
@@ -173,16 +201,16 @@ btnLeave.addEventListener('click', leaveCall);
 btnMute.addEventListener('click', () => {
   audioMuted = !audioMuted;
   localStream?.getAudioTracks().forEach((t) => { t.enabled = !audioMuted; });
-  btnMute.textContent = audioMuted ? 'Unmute' : 'Mute';
+  btnMute.textContent = audioMuted ? 'ミュート解除 Unmute' : 'ミュート Mute';
 });
 
 btnCam.addEventListener('click', () => {
   cameraOff = !cameraOff;
   localStream?.getVideoTracks().forEach((t) => { t.enabled = !cameraOff; });
-  btnCam.textContent = cameraOff ? 'Camera On' : 'Camera Off';
+  btnCam.textContent = cameraOff ? 'カメラオン Camera On' : 'カメラオフ Camera Off';
 });
 
 if (!roomId) {
-  setStatus(false, 'Invalid room link');
+  setStatus(false, '無効なルームリンク Invalid room link');
   btnJoin.disabled = true;
 }

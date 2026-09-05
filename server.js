@@ -99,6 +99,7 @@ wss.on('connection', (ws) => {
           roomId = createRoom();
           role = 'interviewer';
           rooms.get(roomId).interviewer = ws;
+          console.log(`[SERVER] Room ${roomId} created by interviewer`);
           ws.send(JSON.stringify({ type: 'room-created', roomId }));
           break;
         }
@@ -107,14 +108,17 @@ wss.on('connection', (ws) => {
           roomId = data.roomId;
           const room = rooms.get(roomId);
           if (!room) {
+            console.log(`[SERVER] Room ${data.roomId} not found`);
             ws.send(JSON.stringify({ type: 'error', message: 'Room not found' }));
             return;
           }
           role = 'interviewee';
           room.interviewee = ws;
+          console.log(`[SERVER] Interviewee joined room ${roomId}`);
           ws.send(JSON.stringify({ type: 'room-joined', roomId }));
 
           if (room.interviewer && room.interviewer.readyState === ws.OPEN) {
+            console.log(`[SERVER] Notifying interviewer of peer-joined`);
             room.interviewer.send(JSON.stringify({ type: 'peer-joined' }));
           }
           break;
@@ -122,10 +126,17 @@ wss.on('connection', (ws) => {
 
         case 'signal': {
           const room = rooms.get(roomId);
-          if (!room) return;
+          if (!room) {
+            console.log(`[SERVER] Signal from ${role} but room ${roomId} not found`);
+            return;
+          }
           const peer = role === 'interviewer' ? room.interviewee : room.interviewer;
+          const signalType = data.data?.sdp ? `SDP ${data.data.sdp.type}` : data.data?.candidate ? 'ICE candidate' : 'unknown';
           if (peer && peer.readyState === ws.OPEN) {
+            console.log(`[SERVER] Relaying ${signalType} from ${role} to ${role === 'interviewer' ? 'interviewee' : 'interviewer'}`);
             peer.send(JSON.stringify({ type: 'signal', data: data.data }));
+          } else {
+            console.log(`[SERVER] Cannot relay ${signalType} from ${role}: peer not connected`);
           }
           break;
         }
