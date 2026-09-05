@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oyako Mediation — Interviewer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>親子間仲裁 <span>Oyako Mediation</span></h1>
+    <div class="session-controls">
+      <label>
+        Interviewee:
+        <select id="role-select">
+          <option value="parent">Parent (親)</option>
+          <option value="child">Child (子)</option>
+        </select>
+      </label>
+      <div id="stage-display" class="stage-badge">Stage: Waiting...</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="panel video-panel">
+      <div class="panel-header">
+        <h2>Interviewee Video</h2>
+        <div class="controls">
+          <button id="btn-start" class="btn btn-primary">Start Session</button>
+          <button id="btn-stop" class="btn btn-danger" disabled>End Session</button>
+        </div>
+      </div>
+      <div class="video-container">
+        <video id="remote-video" autoplay playsinline></video>
+        <video id="local-video" autoplay playsinline muted></video>
+        <div id="expression-badge" class="expression-badge hidden"></div>
+        <div id="waiting-overlay" class="waiting-overlay">
+          <div class="waiting-content">
+            <div id="room-info" class="hidden">
+              <p>Share this link with the interviewee:</p>
+              <div class="share-link-box">
+                <input id="share-link" type="text" readonly>
+                <button id="btn-copy" class="btn btn-secondary">Copy</button>
+              </div>
+              <p class="waiting-hint">Waiting for interviewee to join...</p>
+            </div>
+            <p id="pre-start-hint">Click "Start Session" to begin</p>
+          </div>
+        </div>
+      </div>
+      <div id="expression-detail" class="expression-detail">
+        <div class="expression-bar">
+          <span>Joy</span>
+          <div class="bar"><div id="bar-joy" class="bar-fill joy"></div></div>
+        </div>
+        <div class="expression-bar">
+          <span>Sorrow</span>
+          <div class="bar"><div id="bar-sorrow" class="bar-fill sorrow"></div></div>
+        </div>
+        <div class="expression-bar">
+          <span>Anger</span>
+          <div class="bar"><div id="bar-anger" class="bar-fill anger"></div></div>
+        </div>
+        <div class="expression-bar">
+          <span>Surprise</span>
+          <div class="bar"><div id="bar-surprise" class="bar-fill surprise"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel transcript-panel">
+      <div class="panel-header">
+        <h2>Transcript</h2>
+        <span id="speech-status" class="status-indicator">Inactive</span>
+      </div>
+      <div id="transcript" class="transcript-content">
+        <p class="placeholder">Transcript will appear when the interviewee speaks...</p>
+      </div>
+      <div id="interim-text" class="interim-text"></div>
+    </div>
+
+    <div class="panel suggestions-panel">
+      <div class="panel-header">
+        <h2>AI Suggested Questions</h2>
+        <button id="btn-suggest" class="btn btn-secondary" disabled>Get Suggestions</button>
+      </div>
+      <div id="suggestions" class="suggestions-content">
+        <p class="placeholder">Click "Get Suggestions" after some conversation to receive AI-powered question recommendations...</p>
+      </div>
+      <div id="suggestion-loading" class="loading hidden">
+        <div class="spinner"></div>
+        <span>Analyzing conversation...</span>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div id="status-bar">
+      <span id="connection-status" class="status-dot disconnected"></span>
+      <span id="status-text">Not started</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
