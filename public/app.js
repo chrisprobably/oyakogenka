@@ -35,10 +35,13 @@ const CHANNEL_INTERVIEWER = 0;
 const CHANNEL_INTERVIEWEE = 1;
 
 const EXPRESSION_INTERVAL_MS = 5000;
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'turn:34.61.142.251:3478', username: 'oyako', credential: 'mediation2026' },
-];
+let ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+async function loadIceConfig() {
+  const res = await fetch('/api/ice-config');
+  const data = await res.json();
+  ICE_SERVERS = data.iceServers;
+}
 
 const LIKELIHOOD_VALUES = {
   UNKNOWN: 0,
@@ -492,6 +495,7 @@ async function getSuggestions() {
 
 async function startSession() {
   try {
+    await loadIceConfig();
     localStream = await navigator.mediaDevices.getUserMedia({
       video: { width: 640, height: 480, facingMode: 'user' },
       audio: true,

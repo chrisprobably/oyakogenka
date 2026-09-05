@@ -31,6 +31,18 @@ const geminiModel = vertexAI.getGenerativeModel({
 
 const rooms = new Map();
 
+app.get('/api/ice-config', (req, res) => {
+  const servers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  if (process.env.TURN_URL) {
+    servers.push({
+      urls: process.env.TURN_URL,
+      username: process.env.TURN_USERNAME,
+      credential: process.env.TURN_CREDENTIAL,
+    });
+  }
+  res.json({ iceServers: servers });
+});
+
 function createRoom() {
   const id = crypto.randomBytes(4).toString('hex');
   rooms.set(id, { interviewer: null, interviewee: null });
