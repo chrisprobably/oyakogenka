@@ -275,6 +275,20 @@ main {
 .transcript-entry.negative { border-left-color: var(--negative); }
 .transcript-entry.neutral { border-left-color: var(--neutral); }
 
+.transcript-entry.interviewer { border-left-color: var(--primary); }
+.transcript-entry.interviewee { border-left-color: var(--surprise); }
+
+.speaker-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.transcript-entry.interviewer .speaker-label { color: var(--primary); }
+.transcript-entry.interviewee .speaker-label { color: var(--surprise); }
+
 .transcript-entry .meta {
   font-size: 0.75rem;
   color: var(--text-secondary);

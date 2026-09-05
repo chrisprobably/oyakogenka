@@ -42,15 +42,15 @@ app.get('/join/:roomId', (req, res) => {
 });
 
 wss.on('connection', (ws) => {
-  let recognizeStream = null;
+  const speechStreams = {};
   let roomId = null;
   let role = null;
 
-  const startSpeechStream = (encoding, sampleRate) => {
-    if (recognizeStream) {
-      recognizeStream.end();
+  const startSpeechStream = (channel, encoding, sampleRate) => {
+    if (speechStreams[channel]) {
+      speechStreams[channel].end();
     }
-    recognizeStream = speechClient
+    const stream = speechClient
       .streamingRecognize({
         config: {
           encoding: encoding || 'WEBM_OPUS',
@@ -67,6 +67,7 @@ wss.on('connection', (ws) => {
         if (result) {
           ws.send(JSON.stringify({
             type: 'transcription',
+            channel,
             transcript: result.alternatives[0].transcript,
             isFinal: result.isFinal,
             confidence: result.alternatives[0].confidence,
@@ -75,24 +76,23 @@ wss.on('connection', (ws) => {
         }
       })
       .on('error', (err) => {
-        console.error('Speech stream error:', err.message);
-        if (recognizeStream) {
-          recognizeStream = null;
-          setTimeout(() => {
-            if (ws.readyState === ws.OPEN) {
-              startSpeechStream(encoding, sampleRate);
-            }
-          }, 1000);
-        }
+        console.error(`Speech stream error (${channel}):`, err.message);
+        speechStreams[channel] = null;
+        setTimeout(() => {
+          if (ws.readyState === ws.OPEN) {
+            startSpeechStream(channel, encoding, sampleRate);
+          }
+        }, 1000);
       })
       .on('end', () => {
-        recognizeStream = null;
+        speechStreams[channel] = null;
       });
+    speechStreams[channel] = stream;
   };
 
-  ws.on('message', (message) => {
-    if (typeof message === 'string') {
-      const data = JSON.parse(message);
+  ws.on('message', (message, isBinary) => {
+    if (!isBinary) {
+      const data = JSON.parse(message.toString());
 
       switch (data.type) {
         case 'create-room': {
@@ -131,28 +131,36 @@ wss.on('connection', (ws) => {
         }
 
         case 'start-speech': {
-          startSpeechStream(data.encoding, data.sampleRate);
+          const channel = data.channel || 'default';
+          startSpeechStream(channel, data.encoding, data.sampleRate);
           break;
         }
 
         case 'stop-speech': {
-          if (recognizeStream) {
-            recognizeStream.end();
-            recognizeStream = null;
+          const channel = data.channel || 'default';
+          if (speechStreams[channel]) {
+            speechStreams[channel].end();
+            speechStreams[channel] = null;
           }
           break;
         }
       }
     } else {
-      if (recognizeStream) {
-        recognizeStream.write(message);
+      // Binary audio data: first byte is channel tag (0=interviewer, 1=interviewee)
+      const tag = message[0];
+      const audioData = message.slice(1);
+      const channel = tag === 1 ? 'interviewee' : 'interviewer';
+      if (speechStreams[channel] && audioData.length > 0) {
+        speechStreams[channel].write(audioData);
       }
     }
   });
 
   ws.on('close', () => {
-    if (recognizeStream) {
-      recognizeStream.end();
+    for (const key of Object.keys(speechStreams)) {
+      if (speechStreams[key]) {
+        speechStreams[key].end();
+      }
     }
     if (roomId && rooms.has(roomId)) {
       const room = rooms.get(roomId);

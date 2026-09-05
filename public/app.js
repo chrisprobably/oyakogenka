@@ -22,13 +22,17 @@ const waitingOverlay = document.getElementById('waiting-overlay');
 let ws = null;
 let localStream = null;
 let peerConnection = null;
-let mediaRecorder = null;
+let localRecorder = null;
+let remoteRecorder = null;
 let expressionInterval = null;
 let transcriptEntries = [];
 let recentExpressions = [];
 let recentSentiments = [];
 let isRunning = false;
 let roomId = null;
+
+const CHANNEL_INTERVIEWER = 0;
+const CHANNEL_INTERVIEWEE = 1;
 
 const EXPRESSION_INTERVAL_MS = 5000;
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
@@ -130,7 +134,10 @@ function handleServerMessage(data) {
 
     case 'peer-left':
       setStatus(false, 'Interviewee disconnected');
-      stopMediaRecorder();
+      if (remoteRecorder && remoteRecorder.state !== 'inactive') {
+        remoteRecorder.stop();
+        remoteRecorder = null;
+      }
       if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
@@ -216,76 +223,90 @@ function startAnalysis(remoteStream) {
   const audioTracks = remoteStream.getAudioTracks();
   if (audioTracks.length > 0) {
     const audioStream = new MediaStream(audioTracks);
-    startSpeechRecognition(audioStream);
+    remoteRecorder = startChannelRecorder('interviewee', CHANNEL_INTERVIEWEE, audioStream);
   }
 
   expressionInterval = setInterval(analyzeExpression, EXPRESSION_INTERVAL_MS);
-  btnSuggest.disabled = false;
 }
 
-function startSpeechRecognition(audioStream) {
+function startChannelRecorder(channel, tag, audioStream) {
   const mimeType = getSupportedMimeType();
   if (!mimeType) {
     console.error('No supported audio MIME type found');
-    return;
+    return null;
   }
 
   const encoding = mimeToEncoding(mimeType);
 
   ws.send(JSON.stringify({
     type: 'start-speech',
+    channel,
     encoding,
     sampleRate: 48000,
   }));
 
   try {
-    mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+    const recorder = new MediaRecorder(audioStream, { mimeType });
 
-    mediaRecorder.ondataavailable = (event) => {
+    recorder.ondataavailable = async (event) => {
       if (event.data.size > 0 && ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(event.data);
+        const audioBytes = await event.data.arrayBuffer();
+        const tagged = new Uint8Array(1 + audioBytes.byteLength);
+        tagged[0] = tag;
+        tagged.set(new Uint8Array(audioBytes), 1);
+        ws.send(tagged.buffer);
       }
     };
 
-    mediaRecorder.start(250);
-    speechStatus.textContent = 'Listening';
-    speechStatus.classList.add('active');
+    recorder.start(250);
+    return recorder;
   } catch (err) {
-    console.error('MediaRecorder error:', err);
-    speechStatus.textContent = 'Audio error';
+    console.error(`MediaRecorder error (${channel}):`, err);
+    return null;
   }
 }
 
-function stopMediaRecorder() {
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
-    mediaRecorder = null;
+function stopAllRecorders() {
+  if (localRecorder && localRecorder.state !== 'inactive') {
+    localRecorder.stop();
+    localRecorder = null;
+  }
+  if (remoteRecorder && remoteRecorder.state !== 'inactive') {
+    remoteRecorder.stop();
+    remoteRecorder = null;
   }
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'stop-speech' }));
+    ws.send(JSON.stringify({ type: 'stop-speech', channel: 'interviewer' }));
+    ws.send(JSON.stringify({ type: 'stop-speech', channel: 'interviewee' }));
   }
 }
 
 function handleTranscription(data) {
+  const speaker = data.channel === 'interviewee' ? 'Interviewee' : 'Interviewer';
   if (data.isFinal) {
     interimTextEl.textContent = '';
-    addTranscriptEntry(data.transcript, data.confidence, data.languageCode);
+    addTranscriptEntry(speaker, data.transcript, data.confidence, data.languageCode);
     analyzeSentiment(data.transcript);
   } else {
-    interimTextEl.textContent = data.transcript;
+    interimTextEl.textContent = `[${speaker}] ${data.transcript}`;
   }
 }
 
-function addTranscriptEntry(text, confidence, lang) {
-  const entry = { text, confidence, lang, timestamp: new Date(), sentiment: null };
+function addTranscriptEntry(speaker, text, confidence, lang) {
+  const entry = { speaker, text, confidence, lang, timestamp: new Date(), sentiment: null };
   transcriptEntries.push(entry);
 
   const placeholder = transcriptEl.querySelector('.placeholder');
   if (placeholder) placeholder.remove();
 
   const div = document.createElement('div');
-  div.className = 'transcript-entry';
+  div.className = `transcript-entry ${speaker.toLowerCase()}`;
   div.dataset.index = transcriptEntries.length - 1;
+
+  const label = document.createElement('strong');
+  label.textContent = speaker;
+  label.className = 'speaker-label';
+  div.appendChild(label);
 
   const p = document.createElement('p');
   p.textContent = text;
@@ -391,7 +412,7 @@ function updateExpressionUI(expr) {
 async function getSuggestions() {
   const recentText = transcriptEntries
     .slice(-10)
-    .map((e) => e.text)
+    .map((e) => `[${e.speaker}] ${e.text}`)
     .join('\n');
 
   if (!recentText.trim() && recentExpressions.length === 0) {
@@ -444,6 +465,13 @@ async function startSession() {
 
     ws.send(JSON.stringify({ type: 'create-room' }));
 
+    // Start transcribing local (interviewer) audio immediately
+    const localAudio = new MediaStream(localStream.getAudioTracks());
+    localRecorder = startChannelRecorder('interviewer', CHANNEL_INTERVIEWER, localAudio);
+    speechStatus.textContent = 'Listening';
+    speechStatus.classList.add('active');
+    btnSuggest.disabled = false;
+
     isRunning = true;
     btnStart.disabled = true;
     btnStop.disabled = false;
@@ -455,7 +483,7 @@ async function startSession() {
 
 function stopSession() {
   isRunning = false;
-  stopMediaRecorder();
+  stopAllRecorders();
 
   if (expressionInterval) {
     clearInterval(expressionInterval);
